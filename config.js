@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 window.HORES_CONFIG = {
   SUPABASE_URL: "https://nzlganmgyblryngrspbb.supabase.co",
-  SUPABASE_ANON_KEY: "sb_secret_-nsHRDw6R36dY9q54Gh3OA_GT1NrlkA",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56bGdhbm1neWJscnluZ3JzcGJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM5NTMxMTEsImV4cCI6MjEwOTUyOTExMX0.6q1-hdiM4pPKNQ4Tb90ZnRJ4HlkqaHcivPBW9aH0oiM",
 
   // Els enquestadors entren amb un nom curt (p. ex. "1104"); internament es converteix
   // en 1104@<DOMINI>. No s'hi envia cap correu. No ho canviïs un cop creats els usuaris.
