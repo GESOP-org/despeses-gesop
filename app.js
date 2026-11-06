@@ -35,6 +35,7 @@
     auth: { persistSession: true, autoRefreshToken: true, storage: magatzem, storageKey: "despeses-gesop-auth" }
   });
   const BUCKET = "tiquets";
+  const MIN_PWD = Math.max(6, +C.MIN_CONTRASENYA || 6);   // 6 = permet les contrasenyes d'Integra (3 lletres + 3 números)
 
   const S = {
     user: null, perfil: null, pestanya: "meves",
@@ -337,7 +338,7 @@
         <label for="a-nom">Nom i cognoms</label><input type="text" id="a-nom" value="${esc(valors.nom || "")}" autocomplete="name">
         <label for="a-codi">Codi d'entrevistador/a <span class="pista">(serà el teu usuari)</span></label>
         <input type="text" id="a-codi" value="${esc(valors.codi || "")}" inputmode="numeric" autocapitalize="none" placeholder="p. ex. 1104">
-        <label for="a-pwd">Tria una contrasenya (mínim 8 caràcters)</label><input type="password" id="a-pwd" autocomplete="new-password">
+        <label for="a-pwd">Tria una contrasenya (mínim ${MIN_PWD} caràcters) <span class="pista">— pots posar la d'Integra</span></label><input type="password" id="a-pwd" autocomplete="new-password">
         <label for="a-pwd2">Repeteix-la</label><input type="password" id="a-pwd2" autocomplete="new-password">
         <label for="a-alta">Codi d'alta <span class="pista">(te'l dona l'oficina)</span></label>
         <input type="text" id="a-alta" value="${esc(valors.alta || "")}" autocapitalize="characters">
@@ -352,7 +353,7 @@
       const pwd = $("#a-pwd").value, err = (t) => { $("#a-err").textContent = t; };
       if (v.nom.length < 3) return err("Escriu el teu nom i cognoms.");
       if (!/^[a-z0-9._-]{2,30}$/.test(v.codi)) return err("El codi només pot tenir números i lletres sense accents.");
-      if (pwd.length < 8) return err("La contrasenya ha de tenir com a mínim 8 caràcters.");
+      if (pwd.length < MIN_PWD) return err(`La contrasenya ha de tenir com a mínim ${MIN_PWD} caràcters.`);
       if (pwd !== $("#a-pwd2").value) return err("Les dues contrasenyes no coincideixen.");
       if (!v.alta) return err("Falta el codi d'alta.");
       const btn = $("#f-alta button[type=submit]"); btn.disabled = true; btn.textContent = "Un moment…";
@@ -380,7 +381,7 @@
         <h1>${forcat ? "Tria una contrasenya nova" : "Canviar contrasenya"}</h1>
         ${forcat ? `<p class="pista">És el primer cop que entres o te l'han restablerta.</p>`
                  : `<label for="p-act">Contrasenya actual</label><input type="password" id="p-act">`}
-        <label for="p-nova">Contrasenya nova (mínim 8 caràcters)</label><input type="password" id="p-nova" autocomplete="new-password">
+        <label for="p-nova">Contrasenya nova (mínim ${MIN_PWD} caràcters)</label><input type="password" id="p-nova" autocomplete="new-password">
         <label for="p-nova2">Repeteix-la</label><input type="password" id="p-nova2" autocomplete="new-password">
         <div id="p-err" class="error"></div>
         <div class="fila-botons">${forcat ? "" : `<button type="button" id="p-cancel">Cancel·la</button>`}<button class="primari" type="submit">Desa</button></div>
@@ -389,7 +390,7 @@
     $("#f-pwd").onsubmit = async (ev) => {
       ev.preventDefault(); const err = (t) => { $("#p-err").textContent = t; };
       const nova = $("#p-nova").value;
-      if (nova.length < 8) return err("Ha de tenir com a mínim 8 caràcters.");
+      if (nova.length < MIN_PWD) return err(`Ha de tenir com a mínim ${MIN_PWD} caràcters.`);
       if (nova !== $("#p-nova2").value) return err("Les dues contrasenyes no coincideixen.");
       if (!forcat) { const { error } = await sb.auth.signInWithPassword({ email: S.user.email, password: $("#p-act").value }); if (error) return err("La contrasenya actual no és correcta."); }
       const { error } = await sb.auth.updateUser({ password: nova });

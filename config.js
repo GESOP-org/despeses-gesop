@@ -13,6 +13,9 @@ window.HORES_CONFIG = {
 
   TITOL: "Despeses de camp · GESOP",
 
+  // Llargada mínima de la contrasenya (6 permet les d'Integra: 3 lletres + 3 números)
+  MIN_CONTRASENYA: 6,
+
   // Tablets compartides: es tanca la sessió després d'aquests minuts sense fer res
   INACTIVITAT_MIN: 15,
 
