@@ -669,6 +669,23 @@
   }
   const chipsAvisos = (av) => (av || []).map((a) => `<span class="chip ${AVISOS_GREUS.includes(a) ? "greu" : ""}" title="${esc(AVISOS[a] || a)}">${esc(AVISOS[a] || a)}</span>`).join(" ");
 
+  // Esborra un full i les seves fotos (admin)
+  async function esborraFull(f) {
+    const pagat = f.estat === "liquidat";
+    const ok = await confirma("Esborrar full",
+      `Segur que vols esborrar el full de <b>${esc(nomP(f.perfils))}</b> del ${fmtData(f.data)} (${esc(f.projecte)}, ${eur(f.total_a_pagar)})?` +
+      (pagat ? `<br><br><b>Atenció:</b> aquest full ja consta com a pagat a la nòmina de ${nomMes(f.liquidacio)}.` : "") +
+      `<br><br>S'esborraran també les seves fotos. No es pot desfer.`, "Esborra", "perill");
+    if (!ok) return false;
+    const { data, error } = await sb.from("fulls_despeses").delete().eq("id", f.id).select("id");
+    if (error) { toast(missatgeError(error), "error"); return false; }
+    if (!data || !data.length) { toast("No s'ha pogut esborrar.", "error"); return false; }
+    const paths = (f.fotos || []).map((x) => x.path);
+    if (paths.length) await sb.storage.from(BUCKET).remove(paths);
+    toast("Full esborrat.", "ok");
+    return true;
+  }
+
   // ------------------------------------------------------------------ ADMIN · revisió
   async function vistaRevisio() {
     S.rev = S.rev || { estat: "pendent", desde: "2020-01-01", fins: avui(), persona: "", projecte: "", nomesAvisos: false, sel: new Set() };
@@ -713,12 +730,17 @@
           <td>${esc(f.projecte)}</td><td>${esc(f.municipi)}</td>
           <td class="num">${eur(f.total_tiquets)}</td><td class="num"><b>${eur(f.total_a_pagar)}</b></td>
           <td class="avisos-cel">${chipsAvisos(f.avisos)}</td><td>${etiquetaEstat(f.estat)}</td>
-          <td><button class="petit primari" data-id="${f.id}">Obre</button></td></tr>`).join("")}
+          <td class="accions"><button class="petit primari" data-id="${f.id}">Obre</button>
+            <button class="petit perill" data-esborra="${f.id}" title="Esborra">🗑</button></td></tr>`).join("")}
         </tbody></table>`;
       const actBoto = () => { $("#r-aprova-sel").disabled = !R.sel.size; $("#r-aprova-sel").textContent = `✓ Aprova els seleccionats${R.sel.size ? ` (${R.sel.size})` : ""}`; };
       $$(".r-sel").forEach((c) => c.onchange = () => { c.checked ? R.sel.add(+c.value) : R.sel.delete(+c.value); actBoto(); });
       const tots = $("#r-tots"); if (tots) tots.onchange = () => { $$(".r-sel").forEach((c) => { c.checked = tots.checked; c.checked ? R.sel.add(+c.value) : R.sel.delete(+c.value); }); actBoto(); };
       $$("#r-taula button[data-id]").forEach((b) => b.onclick = () => obreRevisio(R.vistos.find((f) => f.id === +b.dataset.id), refresca));
+      $$("#r-taula button[data-esborra]").forEach((b) => b.onclick = async () => {
+        const f = R.vistos.find((x) => x.id === +b.dataset.esborra);
+        if (await esborraFull(f)) { R.sel.delete(f.id); refresca(); }
+      });
       actBoto();
     };
     $$("#r-estat, #r-desde, #r-fins, #r-persona, #r-proj, #r-avisos").forEach((el) => el.onchange = refresca);
@@ -762,7 +784,10 @@
       if (error) { toast(missatgeError(error), "error"); return false; }
       despres && despres();
     };
-    const botons = [{ text: "Tanca" }];
+    const botons = [{ text: "Tanca" }, { text: "🗑 Esborra", cls: "perill", onClick: async () => {
+      if (await esborraFull(f)) { despres && despres(); return true; }
+      return false;
+    } }];
     if (f.estat !== "liquidat") {
       botons.push({ text: "Rebutja", cls: "perill", onClick: async () => {
         const motiu = $("#m-motiu").value.trim();
