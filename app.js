@@ -271,7 +271,12 @@
     S.user = user;
     const { data: perfil, error } = await sb.from("perfils").select("*").eq("id", user.id).maybeSingle();
     if (error || !perfil) { await sb.auth.signOut(); return renderLogin("No s'ha trobat el teu perfil. Parla amb l'administració."); }
-    if (!perfil.actiu) { await sb.auth.signOut(); return renderLogin("El teu usuari està desactivat o pendent d'activar."); }
+    if (!perfil.actiu) {
+      await sb.auth.signOut();
+      return renderLogin(perfil.alta_feta === false
+        ? "L'alta no està completa: torna a «Donar-me d'alta» amb el codi d'alta correcte i la mateixa contrasenya."
+        : "El teu usuari està desactivat. Parla amb l'oficina.");
+    }
     S.perfil = perfil; reiniciaInactivitat();
     S.pestanya = perfil.admin ? "revisio" : "meves"; S.rev = null; S.nom = null; S.est = null;   // tablet compartida: no arrossegar res de l'anterior
     if (perfil.canviar_pwd) return renderCanviPwd(true);
@@ -287,7 +292,10 @@
         ${msg ? `<div class="error">${esc(msg)}</div>` : ""}
         <div class="fila-botons"><button class="primari gran" type="submit" style="width:100%">Entra</button></div>
         <p class="pista" style="text-align:center">Tablet compartida: recorda prémer <b>Surt</b> en acabar.</p>
+        <div class="separador-o"><span>És el primer cop?</span></div>
+        <div class="fila-botons" style="margin-top:10px"><button type="button" id="b-alta" style="width:100%">Donar-me d'alta</button></div>
       </form></div>`;
+    $("#b-alta").onclick = () => renderAlta();
     $("#l-user").focus();
     $("#f-login").onsubmit = async (ev) => {
       ev.preventDefault(); const btn = $("#f-login button"); btn.disabled = true;
@@ -296,6 +304,52 @@
       await despresLogin(data.user);
     };
   }
+  // Alta autònoma: l'enquestador/a es crea el compte amb el codi d'alta que li dona l'oficina
+  function renderAlta(valors = {}, msg = "") {
+    app.innerHTML = `<div class="login-fons">${logoHtml("logo-login")}
+      <form class="login" id="f-alta" autocomplete="off">
+        <h1>Donar-me d'alta</h1>
+        <p class="pista">Només el primer cop. Després entraràs amb el teu codi i la contrasenya que triïs ara.</p>
+        <label for="a-nom">Nom i cognoms</label><input type="text" id="a-nom" value="${esc(valors.nom || "")}" autocomplete="name">
+        <label for="a-codi">Codi d'entrevistador/a <span class="pista">(serà el teu usuari)</span></label>
+        <input type="text" id="a-codi" value="${esc(valors.codi || "")}" inputmode="numeric" autocapitalize="none" placeholder="p. ex. 1104">
+        <label for="a-pwd">Tria una contrasenya (mínim 8 caràcters)</label><input type="password" id="a-pwd" autocomplete="new-password">
+        <label for="a-pwd2">Repeteix-la</label><input type="password" id="a-pwd2" autocomplete="new-password">
+        <label for="a-alta">Codi d'alta <span class="pista">(te'l dona l'oficina)</span></label>
+        <input type="text" id="a-alta" value="${esc(valors.alta || "")}" autocapitalize="characters">
+        <div id="a-err" class="error">${esc(msg)}</div>
+        <div class="fila-botons"><button type="button" id="a-tornar">Tornar</button><button class="primari" type="submit" style="flex:1">Donar-me d'alta</button></div>
+      </form></div>`;
+    $("#a-tornar").onclick = () => renderLogin();
+    (valors.nom ? $("#a-pwd") : $("#a-nom")).focus();
+    $("#f-alta").onsubmit = async (ev) => {
+      ev.preventDefault();
+      const v = { nom: $("#a-nom").value.trim(), codi: $("#a-codi").value.trim().toLowerCase(), alta: $("#a-alta").value.trim() };
+      const pwd = $("#a-pwd").value, err = (t) => { $("#a-err").textContent = t; };
+      if (v.nom.length < 3) return err("Escriu el teu nom i cognoms.");
+      if (!/^[a-z0-9._-]{2,30}$/.test(v.codi)) return err("El codi només pot tenir números i lletres sense accents.");
+      if (pwd.length < 8) return err("La contrasenya ha de tenir com a mínim 8 caràcters.");
+      if (pwd !== $("#a-pwd2").value) return err("Les dues contrasenyes no coincideixen.");
+      if (!v.alta) return err("Falta el codi d'alta.");
+      const btn = $("#f-alta button[type=submit]"); btn.disabled = true; btn.textContent = "Un moment…";
+      const email = emailDe(v.codi);
+      let { data, error } = await sb.auth.signUp({ email, password: pwd });
+      if (error && /already (been )?registered|already exists/i.test(error.message || "")) {
+        // ja s'havia començat l'alta (p. ex. codi d'alta incorrecte): s'hi entra amb la mateixa contrasenya
+        ({ data, error } = await sb.auth.signInWithPassword({ email, password: pwd }));
+        if (error) return renderAlta(v, "Ja existeix un usuari amb aquest codi. Si és teu i no recordes la contrasenya, parla amb l'oficina.");
+      } else if (error) return renderAlta(v, missatgeError(error));
+      if (!data.session) return renderAlta(v, "Cal desactivar 'Confirm email' a Supabase. Avisa l'oficina.");
+      const { data: res, error: e2 } = await sb.rpc("alta_enquestador", { p_codi_alta: v.alta, p_nom: v.nom, p_codi: v.codi });
+      if (e2) { await sb.auth.signOut(); return renderAlta(v, missatgeError(e2)); }
+      if (res === "ok" || res === "ja_feta") { toast("Benvingut/da! Ja pots enviar les teves despeses.", "ok"); return despresLogin(data.user); }
+      await sb.auth.signOut();
+      if (res === "codi") return renderAlta({ ...v, alta: "" }, "El codi d'alta no és correcte. Torna-ho a provar (amb la mateixa contrasenya).");
+      if (res === "bloquejat") return renderAlta(v, "Massa intents amb un codi incorrecte. Parla amb l'oficina.");
+      return renderAlta(v, "No s'ha pogut completar l'alta. Torna-ho a provar.");
+    };
+  }
+
   function renderCanviPwd(forcat) {
     app.innerHTML = `<div class="login-fons">${logoHtml("logo-login")}
       <form class="login" id="f-pwd">
@@ -959,7 +1013,7 @@
     if (error) throw error;
     if (!data.user) throw new Error("Supabase no ha retornat l'usuari");
     if (!data.session) throw new Error("Cal desactivar 'Confirm email' a Supabase");
-    const { error: e2 } = await sb.from("perfils").update({ empleat: nom, codi: codi || null, tipus: "camp", actiu: true, canviar_pwd: true }).eq("id", data.user.id);
+    const { error: e2 } = await sb.from("perfils").update({ empleat: nom, codi: codi || null, tipus: "camp", actiu: true, canviar_pwd: true, alta_feta: true }).eq("id", data.user.id);
     if (e2) throw e2;
     return { usuari, nom, codi, pwd };
   }
@@ -972,7 +1026,12 @@
   }
   async function vistaUsuaris() {
     try { await carregaUsuaris(); } catch (e) { return toast(missatgeError(e), "error"); }
-    const camp = S.usuaris.filter((u) => u.tipus === "camp");
+    const acc = new Map();
+    try { const { data } = await sb.rpc("admin_ultims_accessos"); (data || []).forEach((r) => acc.set(r.id, r)); } catch (e) { /* res */ }
+    const darrer = (u) => (acc.get(u.id) || {}).ultim_acces || null;
+    const camp = S.usuaris.filter((u) => u.tipus === "camp" || (!u.admin && u.alta_feta === false))
+      .sort((a, b) => (b.actiu - a.actiu) || String(a.empleat || a.usuari).localeCompare(String(b.empleat || b.usuari), "ca"));
+    S._darrer = darrer;
     $("#contingut").innerHTML = `
       <div class="graella">
         <section class="targeta">
@@ -987,17 +1046,32 @@
           <div class="fila-botons"><button class="primari" id="u-bloc-crea">Crea tots</button></div>
         </section>
         <section class="targeta">
-          <h2>Enquestadors/es (${camp.length})</h2>
-          <div class="taula-cont"><table><thead><tr><th>Usuari</th><th>Nom</th><th>Codi</th><th>Estat</th><th></th></tr></thead><tbody>
+          <h2>Enquestadors/es (${camp.filter((u) => u.actiu).length} actius de ${camp.length})</h2>
+          <div class="barra-filtres" style="margin-bottom:8px">
+            <div style="min-width:0"><label for="u-mesos">Desactivar els que no han entrat en</label>
+              <select id="u-mesos"><option value="2">2 mesos</option><option value="3" selected>3 mesos</option><option value="6">6 mesos</option><option value="12">12 mesos</option></select></div>
+            <button class="perill" id="u-desactiva-vells">Desactiva'ls</button>
+          </div>
+          <div class="taula-cont"><table><thead><tr><th>Usuari</th><th>Nom</th><th>Codi</th><th>Últim accés</th><th>Estat</th><th></th></tr></thead><tbody>
           ${camp.map((u) => `<tr><td>${esc(u.usuari)}</td><td>${esc(u.empleat)}</td><td>${esc(u.codi || "")}</td>
-            <td>${u.actiu ? `<span class="etiqueta verda">Actiu</span>` : `<span class="etiqueta">Desactivat</span>`}${u.canviar_pwd && u.actiu ? ` <span class="etiqueta groga">Pendent de canviar contrasenya</span>` : ""}</td>
+            <td>${darrer(u) ? fmtData(String(darrer(u)).slice(0, 10)) : `<span class="pista">mai</span>`}</td>
+            <td>${u.alta_feta === false ? `<span class="etiqueta groga">Alta incompleta</span>` : (u.actiu ? `<span class="etiqueta verda">Actiu</span>` : `<span class="etiqueta">Desactivat</span>`)}${u.canviar_pwd && u.actiu ? ` <span class="etiqueta groga">Pendent de canviar contrasenya</span>` : ""}</td>
             <td class="accions"><button class="petit" data-a="edita" data-id="${u.id}">Edita</button>
               <button class="petit" data-a="pwd" data-id="${u.id}">Contrasenya</button>
-              <button class="petit ${u.actiu ? "perill" : ""}" data-a="actiu" data-id="${u.id}">${u.actiu ? "Desactiva" : "Activa"}</button></td></tr>`).join("") || `<tr><td colspan="5" class="buit">Encara no hi ha cap enquestador/a.</td></tr>`}
+              <button class="petit ${u.actiu ? "perill" : ""}" data-a="actiu" data-id="${u.id}">${u.actiu ? "Desactiva" : "Activa"}</button></td></tr>`).join("") || `<tr><td colspan="6" class="buit">Encara no hi ha cap enquestador/a.</td></tr>`}
           </tbody></table></div>
-          <p class="pista">Els usuaris d'oficina es gestionen des de la web d'hores. Un usuari desactivat no pot entrar, però els seus fulls es conserven.</p>
+          <p class="pista">Els enquestadors es poden donar d'alta sols amb el <b>codi d'alta</b> (pestanya Configuració). Un usuari desactivat no pot entrar ni reactivar-se sol, però els seus fulls es conserven.</p>
         </section>
       </div>`;
+    $("#u-desactiva-vells").onclick = async () => {
+      const mesos = +$("#u-mesos").value, limit = new Date(); limit.setMonth(limit.getMonth() - mesos);
+      const vells = camp.filter((u) => u.actiu && !u.admin && new Date(darrer(u) || (acc.get(u.id) || {}).creat || 0) < limit);
+      if (!vells.length) return toast(`Tothom ha entrat en els últims ${mesos} mesos.`);
+      if (!await confirma("Desactivar usuaris", `Es desactivaran <b>${vells.length}</b> usuaris que no han entrat en ${mesos} mesos:<br>${vells.map((u) => esc(u.empleat || u.usuari)).join(", ")}.<br><br>Els seus fulls es conserven i els pots tornar a activar quan vulguis.`, "Desactiva", "perill")) return;
+      const { error } = await sb.from("perfils").update({ actiu: false }).in("id", vells.map((u) => u.id));
+      if (error) return toast(missatgeError(error), "error");
+      toast(`${vells.length} usuaris desactivats.`, "ok"); vistaUsuaris();
+    };
     $("#u-crea").onclick = async (ev) => {
       ev.target.disabled = true;
       try { if (!$("#u-nom").value.trim()) throw new Error("Falta el nom."); const r = await creaUsuari($("#u-usuari").value, $("#u-nom").value, $("#u-codi").value); await vistaUsuaris(); mostraContrasenyes([r]); }
@@ -1030,7 +1104,8 @@
         if (error) return toast(missatgeError(error), "error");
         await vistaUsuaris(); mostraContrasenyes([{ usuari: u.usuari, nom: u.empleat, codi: u.codi, pwd }]);
       } else if (b.dataset.a === "actiu") {
-        const { error } = await sb.from("perfils").update({ actiu: !u.actiu }).eq("id", u.id);
+        const canvis = { actiu: !u.actiu }; if (!u.actiu) { canvis.alta_feta = true; canvis.tipus = "camp"; }
+        const { error } = await sb.from("perfils").update(canvis).eq("id", u.id);
         if (error) return toast(missatgeError(error), "error"); vistaUsuaris();
       }
     });
@@ -1063,6 +1138,12 @@
         </section>
       </div>
       <section class="targeta" style="margin-top:20px">
+        <h2>Codi d'alta per als enquestadors</h2>
+        <p class="pista">Amb aquest codi els enquestadors es poden donar d'alta sols des de la pantalla d'entrada («Donar-me d'alta»). Canvia'l quan vulguis: els que ja tenen compte no es veuen afectats.</p>
+        <div class="barra-filtres"><div style="min-width:220px"><label for="k-alta">Codi d'alta actual</label><input type="text" id="k-alta" autocapitalize="characters"></div>
+          <button class="primari" id="k-desa">Desa el codi</button></div>
+      </section>
+      <section class="targeta" style="margin-top:20px">
         <h2>Estudis</h2>
         <div class="barra-filtres">
           <div style="min-width:320px;flex:1"><label for="e-nou">Afegir estudi</label><input type="text" id="e-nou" placeholder="p. ex. G1950 - EnqMunTerrassa2026"></div>
@@ -1072,6 +1153,14 @@
         <p class="pista">Fes servir el mateix nom que a l'Odoo (codi G#### davant): és el que surt al concepte de la nòmina.</p>
         <div class="taula-cont" style="max-height:380px"><table><thead><tr><th>Estudi</th><th>Estat</th><th></th></tr></thead><tbody id="e-llista"><tr><td colspan="3" class="buit">Carregant…</td></tr></tbody></table></div>
       </section>`;
+    // codi d'alta
+    sb.from("config").select("valor").eq("clau", "codi_alta").maybeSingle().then(({ data }) => { if (data) $("#k-alta").value = data.valor; });
+    $("#k-desa").onclick = async () => {
+      const v = $("#k-alta").value.trim();
+      if (v.length < 4) return toast("El codi ha de tenir com a mínim 4 caràcters.", "error");
+      const { error } = await sb.from("config").upsert({ clau: "codi_alta", valor: v }, { onConflict: "clau" });
+      if (error) return toast(missatgeError(error), "error"); toast(`Codi d'alta desat: ${v}`, "ok");
+    };
     // estudis (llista pròpia d'aquest projecte)
     const pintaEstudis = async () => {
       let ll;
