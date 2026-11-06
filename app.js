@@ -240,20 +240,44 @@
   const MUNICIPIS = () => (window.MUNICIPIS_CAT || []).concat(window.MUNICIPIS_RESTA || []);
 
   // ------------------------------------------------------------------ sessió i inactivitat
+  // Inactivitat: a més del temporitzador, es guarda l'hora de l'última activitat i es comprova
+  // cada cop que la pestanya torna a ser visible (les tablets "adormen" els temporitzadors)
   let temporitzador = null;
+  const MAX_INACTIU = (C.INACTIVITAT_MIN || 15) * 60000;
+  const CLAU_ACT = "despeses-ultima-activitat";
+  const llegeixAct = () => { try { return +magatzem.getItem(CLAU_ACT) || 0; } catch (e) { return 0; } };
+  const marcaAct = () => { try { magatzem.setItem(CLAU_ACT, String(Date.now())); } catch (e) { /* res */ } };
+  async function tancaPerInactivitat() {
+    clearTimeout(temporitzador);
+    await sb.auth.signOut(); S.perfil = null; tancaModal();
+    renderLogin("S'ha tancat la sessió per inactivitat.");
+  }
   function reiniciaInactivitat() {
     clearTimeout(temporitzador);
     if (!S.perfil) return;
-    temporitzador = setTimeout(async () => {
-      await sb.auth.signOut(); S.perfil = null;
-      renderLogin("S'ha tancat la sessió per inactivitat.");
-    }, (C.INACTIVITAT_MIN || 15) * 60000);
+    marcaAct();
+    temporitzador = setTimeout(tancaPerInactivitat, MAX_INACTIU);
   }
-  ["click", "keydown", "touchstart"].forEach((ev) => document.addEventListener(ev, reiniciaInactivitat, { passive: true }));
+  function comprovaInactivitat() {
+    if (S.perfil && llegeixAct() && Date.now() - llegeixAct() > MAX_INACTIU) { tancaPerInactivitat(); return true; }
+    return false;
+  }
+  let darreraMarca = 0;
+  ["click", "keydown", "touchstart", "input"].forEach((ev) => document.addEventListener(ev, () => {
+    if (comprovaInactivitat()) return;
+    if (Date.now() - darreraMarca > 5000) { darreraMarca = Date.now(); reiniciaInactivitat(); }
+  }, { passive: true, capture: true }));
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") comprovaInactivitat(); });
+  window.addEventListener("pageshow", comprovaInactivitat);
+  window.addEventListener("focus", comprovaInactivitat);
 
   async function inici() {
     const { data } = await sb.auth.getSession();
     if (!data.session) return renderLogin();
+    // pestanya restaurada o reoberta després de massa estona: es tanca la sessió
+    if (llegeixAct() && Date.now() - llegeixAct() > MAX_INACTIU) {
+      await sb.auth.signOut(); return renderLogin("S'ha tancat la sessió per inactivitat.");
+    }
     await despresLogin(data.session.user);
   }
   async function carregaBase() {
@@ -277,7 +301,7 @@
         ? "L'alta no està completa: torna a «Donar-me d'alta» amb el codi d'alta correcte i la mateixa contrasenya."
         : "El teu usuari està desactivat. Parla amb l'oficina.");
     }
-    S.perfil = perfil; reiniciaInactivitat();
+    S.perfil = perfil; darreraMarca = 0; reiniciaInactivitat();
     S.pestanya = perfil.admin ? "revisio" : "meves"; S.rev = null; S.nom = null; S.est = null;   // tablet compartida: no arrossegar res de l'anterior
     if (perfil.canviar_pwd) return renderCanviPwd(true);
     try { await carregaBase(); } catch (e) { toast(missatgeError(e), "error"); }
