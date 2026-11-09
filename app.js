@@ -605,26 +605,15 @@
       const j = $("#f-jornada"); if (j) j.onchange = () => { S._jornada = j.checked; actualitza(); };
       const fo = $("#f-fora"); if (fo) fo.onchange = () => { S._foraNucli = fo.checked; actualitza(); };
     }
-    // "a pagar" per concepte (sense màxims: es paga el tiquet)
-    const t = r.t;
-    $("#km-tarifa").textContent = `${String(t.km).replace(".", ",")} €/km`;
-    CONCEPTES.forEach(([k]) => {
-      const el = $(`#p-${k}`); if (!el) return;
-      const tiquet = r.tiquet[k], pag = r.pag[k];
-      el.className = "a-pagar";
-      if (!tiquet) { el.textContent = ""; return; }
-      if (k === "km") { el.innerHTML = pag ? `= ${eur(pag)}` : `<span class="no">No es paga</span>`; if (!pag) el.classList.add("zero"); return; }
-      if (pag === tiquet) el.textContent = `Cobraràs ${eur(pag)}`;
-      else if (pag === 0) { el.innerHTML = `<span class="no">No es paga</span>`; el.classList.add("zero"); }
-      else { el.textContent = `Cobraràs ${eur(pag)}`; }
-    });
+    // sota cada import no es mostra res (ni "Cobraràs" ni "No es paga"): ho decideix l'oficina a la revisió
+    $("#km-tarifa").textContent = `${String(r.t.km).replace(".", ",")} €/km`;
     // zones de fotos visibles segons el que s'ha omplert
     $(".zona-foto[data-tipus=km]").classList.toggle("ocult", !(Number(f.km) > 0) && !teFotos("km"));
     $(".zona-foto[data-tipus=hotel]").classList.toggle("ocult", !(Number(f.hotel) > 0) && !teFotos("hotel"));
     // resum
     const avisos = avisosClient(f, r);
     $("#f-resum").innerHTML = `
-      <div class="rf-totals"><div>Total tiquets <b>${eur(r.totalTiquets)}</b></div><div class="rf-pagar">A cobrar <b>${eur(r.total)}</b></div></div>
+      <div class="rf-totals"><div>Total tiquets <b>${eur(r.totalTiquets)}</b></div></div>
       ${avisos.length ? `<ul class="rf-avisos">${avisos.map((a) => `<li>⚠ ${esc(a)}</li>`).join("")}</ul>` : ""}`;
   }
   const teFotos = (tipus) => S._fotosActuals.some((x) => x.tipus === tipus) || S.fotosNoves.some((x) => x.tipus === tipus);
@@ -696,7 +685,7 @@
       // 3) esborra les fotos tretes
       if (S.fotosEsborrar.length) await sb.storage.from(BUCKET).remove(S.fotosEsborrar);
       const d = data[0];
-      toast(`Full enviat. A cobrar: ${eur(d.total_a_pagar)}`, "ok");
+      toast("Full enviat. L'oficina el revisarà.", "ok");
       vistaMeves();
     } catch (e) {
       btn.disabled = false; btn.textContent = S.editant ? "Desa i torna a enviar" : "Envia el full";
