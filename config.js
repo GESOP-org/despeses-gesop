@@ -17,7 +17,7 @@ window.HORES_CONFIG = {
   MIN_CONTRASENYA: 6,
 
   // Tablets compartides: es tanca la sessió després d'aquests minuts sense fer res
-  INACTIVITAT_MIN: 15,
+  INACTIVITAT_MIN: 60,
 
   // Dades de facturació que han de constar a les factures d'hotel
   DADES_FACTURA: "GESOP, Gabinet d'Estudis Socials i Opinió Pública · Carrer Provença 385, entresol A · 08025 Barcelona · CIF: B63647994",
