@@ -145,7 +145,7 @@
   ];
   const AVISOS = {
     sense_tiquet: "Falta la foto del tiquet", sense_foto_km: "Falta la foto del comptaquilòmetres",
-    sense_factura_hotel: "Falta la factura de l'hotel", supera_maxim: "Supera l'import màxim (es paga el màxim)",
+    sense_factura_hotel: "Falta la factura de l'hotel", supera_maxim: "Supera l'import de referència",
     import_estrany: "Import molt alt: revisa si falta la coma", dieta_no_correspon: "Dieta que no correspon segons el criteri",
     desplacament_amb: "Desplaçament dins l'AMB (no es paga)", data_futura: "Data futura", data_antiga: "Data de fa més de 60 dies",
     altres_sense_concepte: "\"Altres\" sense concepte", mateix_dia: "Hi ha un altre full el mateix dia"
@@ -163,10 +163,10 @@
     const dietaOk = c && c.sense_dieta ? !!(c.nota && f.fora_nucli) : !!f.jornada_completa;
     const v = (k) => Number(f[k]) || 0;
     const pag = {
-      esmorzar: dietaOk ? Math.min(v("esmorzar"), +t.esmorzar) : 0,
-      dinar: dietaOk ? Math.min(v("dinar"), +t.dinar) : 0,
-      sopar: dietaOk ? Math.min(v("sopar"), +t.sopar) : 0,
-      hotel: Math.min(v("hotel"), +t.hotel * (Number(f.hotel_nits) || 1)),
+      esmorzar: dietaOk ? v("esmorzar") : 0,   // sense màxim: es paga el tiquet
+      dinar: dietaOk ? v("dinar") : 0,
+      sopar: dietaOk ? v("sopar") : 0,
+      hotel: v("hotel"),
       transport: despOk ? v("transport") : 0,
       km: despOk ? Math.round(v("km") * +t.km * 100) / 100 : 0,
       aparcament: despOk ? v("aparcament") : 0,
@@ -362,7 +362,7 @@
       if (error && /already (been )?registered|already exists/i.test(error.message || "")) {
         // ja s'havia començat l'alta (p. ex. codi d'alta incorrecte): s'hi entra amb la mateixa contrasenya
         ({ data, error } = await sb.auth.signInWithPassword({ email, password: pwd }));
-        if (error) return renderAlta(v, "Ja existeix un usuari amb aquest codi. Si és teu i no recordes la contrasenya, parla amb l'oficina.");
+        if (error) return renderAlta(v, `El codi d'entrevistador/a «${v.codi}» ja està fet servir per una altra persona (cada persona ha de posar el seu). Si és el teu i no recordes la contrasenya, parla amb l'oficina.`);
       } else if (error) return renderAlta(v, missatgeError(error));
       if (!data.session) return renderAlta(v, "Cal desactivar 'Confirm email' a Supabase. Avisa l'oficina.");
       const { data: res, error: e2 } = await sb.rpc("alta_enquestador", { p_codi_alta: v.alta, p_nom: v.nom, p_codi: v.codi });
@@ -426,7 +426,7 @@
   }
   const etiquetaEstat = (e) => ({
     pendent: `<span class="etiqueta groga">Pendent de revisar</span>`, aprovat: `<span class="etiqueta blava">Aprovat</span>`,
-    rebutjat: `<span class="etiqueta vermella">Rebutjat</span>`, liquidat: `<span class="etiqueta verda">Pagat a nòmina</span>`
+    rebutjat: `<span class="etiqueta vermella">Rebutjat</span>`, liquidat: `<span class="etiqueta verda">Pagat</span>`
   }[e] || esc(e));
 
   // ------------------------------------------------------------------ LES MEVES DESPESES
@@ -442,8 +442,8 @@
     $("#contingut").innerHTML = `
       <div class="comptadors">
         <div class="comptador"><div class="c-titol">Pendent de revisar</div><div class="c-valor">${eur(suma(["pendent"]))}</div><div class="c-sub">${S.fulls.filter((f) => f.estat === "pendent").length} fulls</div></div>
-        <div class="comptador"><div class="c-titol">Aprovat · propera nòmina</div><div class="c-valor">${eur(suma(["aprovat"]))}</div><div class="c-sub">${S.fulls.filter((f) => f.estat === "aprovat").length} fulls</div></div>
-        <div class="comptador"><div class="c-titol">Pagat a la nòmina de ${MESOS[+mes.slice(5) - 1]}</div><div class="c-valor">${eur(pagatMes)}</div><div class="c-sub">&nbsp;</div></div>
+        <div class="comptador"><div class="c-titol">Aprovat · pendent de pagar</div><div class="c-valor">${eur(suma(["aprovat"]))}</div><div class="c-sub">${S.fulls.filter((f) => f.estat === "aprovat").length} fulls</div></div>
+        <div class="comptador"><div class="c-titol">Pagat · ${MESOS[+mes.slice(5) - 1]}</div><div class="c-valor">${eur(pagatMes)}</div><div class="c-sub">&nbsp;</div></div>
       </div>
       <div class="fila-botons" style="margin:0 0 16px"><button class="primari gran" id="b-nou">＋ Nou full de despeses</button></div>
       <section class="targeta">
@@ -490,7 +490,7 @@
         <div id="f-criteri"></div>
 
         <h3 class="seccio">🍽 Dietes</h3>
-        <div class="graella-imports">${campImport("esmorzar", "Esmorzar", "màx.")}${campImport("dinar", "Dinar", "màx.")}${campImport("sopar", "Sopar", "màx.")}</div>
+        <div class="graella-imports">${campImport("esmorzar", "Esmorzar")}${campImport("dinar", "Dinar")}${campImport("sopar", "Sopar")}</div>
 
         <h3 class="seccio">🚆 Desplaçament</h3>
         <div class="graella-imports">
@@ -503,7 +503,7 @@
 
         <h3 class="seccio">🏨 Hotel</h3>
         <div class="graella-imports">
-          ${campImport("hotel", "Hotel (total)", "màx.")}
+          ${campImport("hotel", "Hotel (total)")}
           <div class="camp-import"><label for="c-nits">Nits</label><div class="input-eur"><input type="number" id="c-nits" min="1" max="60" step="1" inputmode="numeric" placeholder="1"><span>nits</span></div></div>
           ${campImport("impost_turistic", "Impost turístic")}
         </div>
@@ -605,11 +605,8 @@
       const j = $("#f-jornada"); if (j) j.onchange = () => { S._jornada = j.checked; actualitza(); };
       const fo = $("#f-fora"); if (fo) fo.onchange = () => { S._foraNucli = fo.checked; actualitza(); };
     }
-    // màxims i "a pagar" per concepte
+    // "a pagar" per concepte (sense màxims: es paga el tiquet)
     const t = r.t;
-    const maxims = { esmorzar: t.esmorzar, dinar: t.dinar, sopar: t.sopar };
-    Object.entries(maxims).forEach(([k, m]) => { const lab = $(`label[for=c-${k}] .pista`); if (lab) lab.textContent = `màx. ${eur(m)}`; });
-    const labH = $("label[for=c-hotel] .pista"); if (labH) labH.textContent = `màx. ${eur(t.hotel)}/nit`; else $("label[for=c-hotel]").insertAdjacentHTML("beforeend", ` <span class="pista">màx. ${eur(t.hotel)}/nit</span>`);
     $("#km-tarifa").textContent = `${String(t.km).replace(".", ",")} €/km`;
     CONCEPTES.forEach(([k]) => {
       const el = $(`#p-${k}`); if (!el) return;
@@ -619,7 +616,7 @@
       if (k === "km") { el.innerHTML = pag ? `= ${eur(pag)}` : `<span class="no">No es paga</span>`; if (!pag) el.classList.add("zero"); return; }
       if (pag === tiquet) el.textContent = `Cobraràs ${eur(pag)}`;
       else if (pag === 0) { el.innerHTML = `<span class="no">No es paga</span>`; el.classList.add("zero"); }
-      else { el.innerHTML = `Cobraràs ${eur(pag)} <span class="pista">(màxim)</span>`; el.classList.add("parcial"); }
+      else { el.textContent = `Cobraràs ${eur(pag)}`; }
     });
     // zones de fotos visibles segons el que s'ha omplert
     $(".zona-foto[data-tipus=km]").classList.toggle("ocult", !(Number(f.km) > 0) && !teFotos("km"));
@@ -898,7 +895,7 @@
           <label for="n-mes">Nòmina del mes</label><input type="month" id="n-mes" value="${N.mes}">
           <div class="fila-botons"><button class="verd" id="n-excel">⬇ Descarrega l'Excel per a nòmina</button></div>
           <div class="fila-botons"><button class="primari" id="n-liquida">Marca com a pagats en aquesta nòmina</button></div>
-          <p class="pista">Primer descarrega l'Excel i, quan la nòmina estigui feta, marca'ls com a pagats: deixaran de sortir aquí i l'enquestador/a ho veurà com a "Pagat a nòmina".</p>
+          <p class="pista">Primer descarrega l'Excel i, quan la nòmina estigui feta, marca'ls com a pagats: deixaran de sortir aquí i l'enquestador/a ho veurà com a "Pagat".</p>
           <hr>
           <label for="n-hist">Consultar una nòmina ja feta</label>
           <div class="dues"><input type="month" id="n-hist" value="${N.mes}"><button id="n-hist-b">Descarrega</button></div>
@@ -1143,13 +1140,13 @@
     $("#contingut").innerHTML = `
       <div class="graella" style="grid-template-columns: 1fr 1fr">
         <section class="targeta">
-          <h2>Imports màxims per any</h2>
+          <h2>Imports de referència per any</h2>
           <div class="taula-cont"><table><thead><tr><th>Any</th><th>Esmorzar</th><th>Dinar</th><th>Sopar</th><th>Hotel/nit</th><th>€/km</th><th></th></tr></thead><tbody>
           ${tf.map((t) => `<tr data-any="${t.exercici}"><td><b>${t.exercici}</b></td>${["esmorzar", "dinar", "sopar", "hotel", "km"].map((k) => `<td><input type="text" class="t-in" data-k="${k}" value="${fmtInput(t[k])}" inputmode="decimal" style="width:70px"></td>`).join("")}
             <td><button class="petit primari t-desa">Desa</button></td></tr>`).join("")}
           </tbody></table></div>
           <div class="fila-botons"><button id="t-nou">＋ Afegeix l'any ${tf.length ? tf[0].exercici + 1 : new Date().getFullYear()}</button></div>
-          <p class="pista">Cada full es calcula amb els imports de l'any de la seva data.</p>
+          <p class="pista">Es paga l'import del tiquet, sense màxim. Aquests imports només serveixen de referència: si un full els supera, a Revisió surt l'avís "Supera l'import de referència". La tarifa €/km sí que s'aplica.</p>
         </section>
         <section class="targeta">
           <h2>Criteri per municipi</h2>
